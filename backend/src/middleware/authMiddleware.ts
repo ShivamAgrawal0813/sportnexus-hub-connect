@@ -1,0 +1,76 @@
+import { Request, Response, NextFunction } from 'express';
+import { verifyToken, TokenPayload } from '../utils/jwt';
+
+// Extend Express Request type to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: TokenPayload;
+    }
+  }
+}
+
+// Authenticate middleware - protects routes
+export const authenticate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  let token;
+
+  // Check if auth header exists and starts with Bearer
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      // Get token from header
+      token = req.headers.authorization.split(' ')[1];
+      
+      if (!token) {
+        return res.status(401).json({ message: 'Not authorized, empty token' });
+      }
+
+      // Verify token
+      try {
+        const decoded = verifyToken(token);
+        // Add user from payload to request
+        req.user = decoded;
+        next();
+      } catch (jwtError: any) {
+        console.error('JWT verification failed:', jwtError.message);
+        
+        if (jwtError.name === 'JsonWebTokenError') {
+          return res.status(401).json({ message: 'Not authorized, malformed token' });
+        } else if (jwtError.name === 'TokenExpiredError') {
+          return res.status(401).json({ message: 'Not authorized, token expired' });
+        } else {
+          return res.status(401).json({ message: 'Not authorized, token validation failed' });
+        }
+      }
+    } catch (error: any) {
+      console.error('Auth middleware error:', error);
+      res.status(401).json({ 
+        message: 'Not authorized, authentication failed', 
+        error: error.message
+      });
+    }
+  } else {
+    res.status(401).json({ message: 'Not authorized, no token provided' });
+  }
+};
+
+// Authorize middleware - restricts to specific roles
+export const authorize = (role: string) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authorized, authentication required' });
+    }
+    
+    if (req.user.role === role) {
+      next();
+    } else {
+      res.status(403).json({ message: `Not authorized as ${role}` });
+    }
+  };
+}; 
