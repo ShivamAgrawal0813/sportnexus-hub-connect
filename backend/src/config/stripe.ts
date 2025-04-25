@@ -2,6 +2,9 @@ import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import path from 'path';
 
+// SECURITY NOTICE: No API keys should ever be hardcoded in this file.
+// All sensitive credentials must be stored in environment variables only.
+
 // Log the current directory and environment
 console.log('Current directory:', process.cwd());
 console.log('Env file path:', path.resolve(process.cwd(), '.env'));
@@ -14,14 +17,10 @@ if (!process.env.STRIPE_SECRET_KEY) {
   console.warn('⚠️ STRIPE_SECRET_KEY is not set in environment variables. Stripe functionality will be disabled.');
 } else {
   console.log('✅ STRIPE_SECRET_KEY is properly configured');
-  // Only log a masked version of the key for security
-  if (process.env.STRIPE_SECRET_KEY.length >= 8) {
-    const keyLength = process.env.STRIPE_SECRET_KEY.length;
-    const maskedKey = `${process.env.STRIPE_SECRET_KEY.substring(0, 4)}...${process.env.STRIPE_SECRET_KEY.substring(keyLength - 4)}`;
-    console.log('Key signature:', maskedKey);
-  } else {
-    console.log('Key available but format is unexpected');
-  }
+  // Only log the first 4 and last 4 characters for security
+  const key = process.env.STRIPE_SECRET_KEY;
+  const maskedKey = `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
+  console.log('Key signature:', maskedKey);
 }
 
 /**
