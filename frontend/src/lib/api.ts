@@ -97,6 +97,39 @@ export const authAPI = {
     return { ...data, token };
   },
   
+  // Forgot password - request reset email
+  forgotPassword: async (email: string): Promise<{ success: boolean, message: string }> => {
+    const response = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await response.json();
+    return data;
+  },
+  
+  // Reset password with token
+  resetPassword: async (token: string, password: string): Promise<{ success: boolean, message: string, token?: string }> => {
+    const response = await fetch(`${API_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token, password }),
+    });
+
+    const data = await response.json();
+    
+    if (response.ok && data.token) {
+      localStorage.setItem('token', data.token);
+    }
+    
+    return data;
+  },
+  
   // Logout user
   logout: (): void => {
     localStorage.removeItem('token');

@@ -350,9 +350,39 @@ export const sendBookingReminderEmail = async (
   return await sendEmail(userEmail, subject, emailHtml);
 };
 
+export const sendPasswordResetEmail = async (
+  userEmail: string,
+  userName: string,
+  resetToken: string
+) => {
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:8081'}/reset-password/${resetToken}`;
+  
+  const subject = 'SportNexus - Password Reset';
+  
+  const content = `
+    <p>Hello ${userName},</p>
+    
+    <p>We received a request to reset your password for your SportNexus account.</p>
+    
+    <p>Click the button below to reset your password. This link is valid for 1 hour.</p>
+    
+    <p>If you didn't request a password reset, you can safely ignore this email.</p>
+  `;
+  
+  const emailHtml = generateEmailTemplate(
+    'Reset Your Password',
+    content,
+    'Reset Password',
+    resetUrl
+  );
+  
+  return await sendEmail(userEmail, subject, emailHtml);
+};
+
 export default {
   sendEmail,
   sendBookingConfirmationEmail,
   sendBookingStatusUpdateEmail,
-  sendBookingReminderEmail
+  sendBookingReminderEmail,
+  sendPasswordResetEmail
 }; 

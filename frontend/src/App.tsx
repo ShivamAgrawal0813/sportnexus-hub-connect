@@ -29,6 +29,10 @@ const AdminAddTutorial = lazy(() => import("./pages/admin/AddTutorial"));
 const AdminEditTutorial = lazy(() => import("./pages/admin/EditTutorial"));
 const AdminDiscountManager = lazy(() => import("./pages/admin/DiscountManager"));
 
+// Import password reset pages
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
+
 // Create a loading component
 const PageLoading = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -61,6 +65,8 @@ const AppRoutes = () => (
         <Register />
       </Suspense>
     } />
+    <Route path="/forgot-password" element={<ForgotPassword />} />
+    <Route path="/reset-password/:token" element={<ResetPassword />} />
     
     {/* Protected routes inside MainLayout */}
     <Route element={<ProtectedRoute />}>
