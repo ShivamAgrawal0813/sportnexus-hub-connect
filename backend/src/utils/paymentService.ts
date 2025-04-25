@@ -185,34 +185,83 @@ export const processWalletPayment = async ({
       };
     }
     
+    // Define exchange rates for currency conversion if needed
+    const exchangeRates = {
+      USD_TO_INR: 83.0,
+      INR_TO_USD: 1/83.0,
+    };
+    
+    // Check if currency conversion is needed
+    let paymentAmountInWalletCurrency = amount;
+    if (wallet.currency !== currency) {
+      // Convert the payment amount to the wallet's currency
+      if (currency === 'USD' && wallet.currency === 'INR') {
+        paymentAmountInWalletCurrency = Math.round(amount * exchangeRates.USD_TO_INR * 100) / 100;
+      } else if (currency === 'INR' && wallet.currency === 'USD') {
+        paymentAmountInWalletCurrency = Math.round(amount * exchangeRates.INR_TO_USD * 100) / 100;
+      }
+    }
+    
     // Check if wallet has sufficient balance
-    if (wallet.balance < amount || wallet.currency !== currency) {
+    if (wallet.balance < paymentAmountInWalletCurrency) {
       return {
         success: false,
-        message: 'Insufficient wallet balance or currency mismatch',
+        message: `Insufficient wallet balance. Available: ${wallet.balance} ${wallet.currency}, Required: ${paymentAmountInWalletCurrency} ${wallet.currency}`,
       };
     }
     
+    // Initialize metadata if it doesn't exist
+    if (!wallet.metadata) {
+      wallet.metadata = {};
+    }
+    
     // Update wallet balance
-    wallet.balance -= amount;
+    wallet.balance -= paymentAmountInWalletCurrency;
+    
+    // Update originalUsdBalance in metadata
+    if (wallet.currency === 'USD' && wallet.metadata.originalUsdBalance) {
+      wallet.metadata.originalUsdBalance -= paymentAmountInWalletCurrency;
+      if (wallet.metadata.originalUsdBalance < 0) {
+        wallet.metadata.originalUsdBalance = 0;
+      }
+    } else if (wallet.currency === 'INR' && wallet.metadata.originalUsdBalance) {
+      // If spending INR, convert it to USD and subtract from originalUsdBalance
+      const usdAmount = Math.round(paymentAmountInWalletCurrency * exchangeRates.INR_TO_USD * 100) / 100;
+      wallet.metadata.originalUsdBalance -= usdAmount;
+      if (wallet.metadata.originalUsdBalance < 0) {
+        wallet.metadata.originalUsdBalance = 0;
+      }
+    }
+    
+    // Add transaction record to the wallet
     wallet.transactions.push({
-      amount,
+      amount: paymentAmountInWalletCurrency,
       type: 'debit',
-      description,
+      description: wallet.currency !== currency 
+        ? `${description} (Converted from ${amount} ${currency})` 
+        : description,
       reference: bookingId,
       createdAt: new Date(),
+      metadata: {
+        originalAmount: amount,
+        originalCurrency: currency
+      }
     });
     
     await wallet.save();
     
-    // Create payment record
+    // Create payment record - always use the original currency for the payment record
     const payment = await Payment.create({
       user: userId,
       booking: bookingId,
-      amount,
-      currency,
+      amount, // Original amount in the requested currency
+      currency, // Original currency
       status: 'completed',
       paymentMethod: 'wallet',
+      metadata: {
+        walletCurrency: wallet.currency,
+        walletAmount: paymentAmountInWalletCurrency
+      }
     });
     
     // Update booking status if bookingId exists
@@ -226,6 +275,7 @@ export const processWalletPayment = async ({
     return {
       success: true,
       payment,
+      wallet
     };
   } catch (error) {
     console.error('Wallet payment error:', error);
@@ -253,17 +303,45 @@ export const addFundsToWallet = async (
         balance: 0,
         currency,
         transactions: [],
+        metadata: {
+          originalUsdBalance: currency === 'USD' ? amount : 0
+        }
       });
+    } else if (wallet.currency !== currency) {
+      // If the wallet exists but currency is different, update the currency
+      // This allows users to switch between USD and INR
+      wallet.currency = currency;
+    }
+    
+    // Initialize metadata if it doesn't exist
+    if (!wallet.metadata) {
+      wallet.metadata = {};
     }
     
     // Update wallet balance
     wallet.balance += amount;
+    
+    // If currency is USD, update the originalUsdBalance
+    if (currency === 'USD') {
+      wallet.metadata.originalUsdBalance = wallet.balance;
+    } else if (currency === 'INR' && wallet.metadata.originalUsdBalance) {
+      // If adding INR, convert it to USD and add to originalUsdBalance
+      // Using exact inverse of USD_TO_INR for precision
+      const USD_TO_INR = 83.0;
+      const exchangeRate = 1/USD_TO_INR; 
+      wallet.metadata.originalUsdBalance += Math.round(amount * exchangeRate * 100) / 100;
+    }
+    
     wallet.transactions.push({
       amount,
       type: 'credit',
       description: 'Added funds to wallet',
       reference: paymentId,
       createdAt: new Date(),
+      metadata: {
+        originalAmount: amount,
+        originalCurrency: currency
+      }
     });
     
     await wallet.save();

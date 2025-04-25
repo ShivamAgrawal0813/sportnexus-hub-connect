@@ -4,6 +4,7 @@ import {
   addFunds,
   processWalletFunding,
   getTransactions,
+  updateWalletCurrency
 } from '../controllers/walletController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -23,5 +24,8 @@ router.post('/funds/process', processWalletFunding);
 
 // Get wallet transaction history
 router.get('/transactions', getTransactions);
+
+// Update wallet currency
+router.post('/currency', updateWalletCurrency);
 
 export default router; 

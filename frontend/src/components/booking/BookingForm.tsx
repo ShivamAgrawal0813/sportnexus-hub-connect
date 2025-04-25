@@ -25,6 +25,7 @@ import {
   PopoverTrigger 
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -70,6 +71,27 @@ export function BookingForm({
   const navigate = useNavigate();
   const [isTimeError, setIsTimeError] = useState(false);
   const [calculatedPrice, setCalculatedPrice] = useState(price);
+  const [selectedCurrency, setSelectedCurrency] = useState(localStorage.getItem('preferredCurrency') || 'USD');
+  
+  // Convert price based on currency
+  const convertPrice = (priceInUsd: number, toCurrency: string): number => {
+    if (toCurrency === 'USD') return priceInUsd;
+    // USD to INR conversion
+    return Math.round(priceInUsd * 83.0 * 100) / 100;
+  };
+  
+  // Format currency display
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+      style: 'currency',
+      currency: currency
+    }).format(amount);
+  };
+  
+  // Get price in selected currency
+  const getPriceInSelectedCurrency = () => {
+    return convertPrice(calculatedPrice, selectedCurrency);
+  };
   
   // Define form schema based on item type
   const formSchema = itemType === 'venue' ? venueBookingSchema : equipmentBookingSchema;
@@ -206,7 +228,7 @@ export function BookingForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <FormField
           control={form.control}
           name="date"
@@ -342,19 +364,38 @@ export function BookingForm({
           )}
         />
         
+        <div className="space-y-2">
+          <Label htmlFor="currency">Display Currency</Label>
+          <div className="flex space-x-2">
+            <Button
+              type="button"
+              variant={selectedCurrency === 'USD' ? 'default' : 'outline'}
+              onClick={() => setSelectedCurrency('USD')}
+              className="flex-1"
+            >
+              USD ($)
+            </Button>
+            <Button
+              type="button"
+              variant={selectedCurrency === 'INR' ? 'default' : 'outline'}
+              onClick={() => setSelectedCurrency('INR')}
+              className="flex-1"
+            >
+              INR (₹)
+            </Button>
+          </div>
+        </div>
+        
         <div className="border rounded-md p-4 bg-muted/50">
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium">Total Price:</span>
             <span className="text-lg font-bold">
-              {new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-              }).format(calculatedPrice)}
+              {formatCurrency(getPriceInSelectedCurrency(), selectedCurrency)}
             </span>
           </div>
           {itemType === 'venue' && (
             <p className="text-xs text-muted-foreground mt-1">
-              Based on venue rate of ${price.toFixed(2)}/hour
+              Based on venue rate of {formatCurrency(convertPrice(price, selectedCurrency), selectedCurrency)}/hour
             </p>
           )}
           {itemType === 'equipment' && (

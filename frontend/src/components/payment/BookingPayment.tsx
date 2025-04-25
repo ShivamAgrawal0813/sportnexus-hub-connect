@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, AlertCircle, CreditCard, Wallet } from 'lucide-react';
+import { Loader2, AlertCircle, CreditCard, Wallet, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import StripeProvider from './StripeProvider';
 import StripePaymentForm from './StripePaymentForm';
 import { useToast } from '@/components/ui/use-toast';
+import { Label } from '@/components/ui/label';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -49,6 +50,8 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
   const [booking, setBooking] = useState<BookingDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>('stripe');
+  const [selectedCurrency, setSelectedCurrency] = useState(localStorage.getItem('preferredCurrency') || 'USD');
+  const [walletInfo, setWalletInfo] = useState<{ balance: number, currency: string } | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -67,42 +70,44 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
         
         console.log('Booking data received:', response.data);
         setBooking(response.data);
-        setLoading(false);
+        
+        // Fetch wallet info for wallet payments
+        fetchWalletInfo();
       } catch (err: any) {
         console.error('Error fetching booking details:', err);
-        
-        // More detailed error message
-        let errorMessage = 'Failed to load booking details';
-        if (err.response) {
-          console.error('Server response:', err.response.status, err.response.data);
-          errorMessage = err.response.data?.message || `Error ${err.response.status}: ${errorMessage}`;
-        } else if (err.request) {
-          console.error('No response received from server');
-          errorMessage = 'No response received from server';
-        } else {
-          console.error('Error setting up request:', err.message);
-          errorMessage = err.message || errorMessage;
-        }
-        
+        const errorMessage = err.response?.data?.message || 'Failed to load booking details';
         setError(errorMessage);
         setLoading(false);
-        
-        // Show toast for additional visibility
-        toast({
-          title: "Error loading booking",
-          description: errorMessage,
-          variant: "destructive"
-        });
       }
     };
+    
+    fetchBookingDetails();
+  }, [bookingId]);
 
-    if (bookingId) {
-      fetchBookingDetails();
-    } else {
-      setError('No booking ID provided');
+  const fetchWalletInfo = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/wallet`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.data.success) {
+        setWalletInfo({
+          balance: response.data.wallet.balance,
+          currency: response.data.wallet.currency
+        });
+        
+        // Set the default currency to match the wallet currency
+        setSelectedCurrency(response.data.wallet.currency);
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching wallet info:', error);
       setLoading(false);
     }
-  }, [bookingId, toast]);
+  };
 
   const handlePaymentSuccess = () => {
     // Update the booking status here
@@ -145,6 +150,38 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
     });
   };
 
+  // Format price based on currency
+  const formatPrice = (price: number, currency: string) => {
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+      style: 'currency',
+      currency: currency
+    }).format(price);
+  };
+
+  // Convert price between currencies if needed
+  const convertPrice = (price: number, fromCurrency: string, toCurrency: string): number => {
+    if (fromCurrency === toCurrency) return price;
+    
+    // Exchange rates
+    const USD_TO_INR = 83.0;
+    const INR_TO_USD = 1/83.0;
+    
+    if (fromCurrency === 'USD' && toCurrency === 'INR') {
+      return Math.round(price * USD_TO_INR * 100) / 100;
+    } else if (fromCurrency === 'INR' && toCurrency === 'USD') {
+      return Math.round(price * INR_TO_USD * 100) / 100;
+    }
+    
+    return price;
+  };
+
+  // Get the price in the selected currency
+  const getPriceInSelectedCurrency = (): number => {
+    if (!booking) return 0;
+    // Booking prices are stored in USD by default
+    return convertPrice(booking.totalPrice, 'USD', selectedCurrency);
+  };
+
   const handleWalletPayment = async () => {
     try {
       setLoading(true);
@@ -154,8 +191,8 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
       const response = await axios.post(
         `${API_URL}/payments`,
         {
-          amount: booking?.totalPrice,
-          currency: 'USD',
+          amount: getPriceInSelectedCurrency(),
+          currency: selectedCurrency,
           bookingId: bookingId,
           paymentMethod: 'wallet'
         },
@@ -176,7 +213,7 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
         // Show specific wallet payment success message
         toast({
           title: "Wallet Payment Successful",
-          description: "Payment completed using your wallet balance.",
+          description: `Payment of ${formatPrice(getPriceInSelectedCurrency(), selectedCurrency)} completed using your wallet balance.`,
           variant: "default",
         });
       } else {
@@ -292,8 +329,30 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
                 
                 <span className="text-muted-foreground">Price:</span>
                 <span className="font-medium">
-                  ${booking.totalPrice.toFixed(2)}
+                  {formatPrice(getPriceInSelectedCurrency(), selectedCurrency)}
                 </span>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="currency">Currency</Label>
+              <div className="flex space-x-2">
+                <Button
+                  type="button"
+                  variant={selectedCurrency === 'USD' ? 'default' : 'outline'}
+                  onClick={() => setSelectedCurrency('USD')}
+                  className="flex-1"
+                >
+                  USD ($)
+                </Button>
+                <Button
+                  type="button"
+                  variant={selectedCurrency === 'INR' ? 'default' : 'outline'}
+                  onClick={() => setSelectedCurrency('INR')}
+                  className="flex-1"
+                >
+                  INR (₹)
+                </Button>
               </div>
             </div>
 
@@ -312,7 +371,11 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
                 onClick={() => setPaymentMethod('wallet')}
               >
                 <Wallet className="mr-2 h-4 w-4" />
-                Wallet
+                Wallet {walletInfo && (
+                  <span className="ml-1 text-xs">
+                    ({formatPrice(walletInfo.balance, walletInfo.currency)})
+                  </span>
+                )}
               </Button>
             </div>
 
@@ -321,8 +384,8 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
             {paymentMethod === 'stripe' ? (
               <StripeProvider>
                 <StripePaymentForm
-                  amount={booking.totalPrice}
-                  currency="USD"
+                  amount={getPriceInSelectedCurrency()}
+                  currency={selectedCurrency.toLowerCase()}
                   bookingId={bookingId}
                   onSuccess={handlePaymentSuccess}
                   onError={handlePaymentError}
@@ -333,6 +396,16 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
                 <p className="text-sm text-muted-foreground">
                   Pay using your wallet balance. Your current balance will be checked before completing the transaction.
                 </p>
+                {walletInfo && walletInfo.currency !== selectedCurrency && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Currency Mismatch</AlertTitle>
+                    <AlertDescription>
+                      Your wallet is in {walletInfo.currency} but you're paying in {selectedCurrency}. 
+                      Your wallet will be automatically converted.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <Button
                   className="w-full"
                   onClick={handleWalletPayment}
@@ -344,7 +417,7 @@ const BookingPayment: React.FC<BookingPaymentProps> = ({ bookingId, onSuccess, o
                       Processing...
                     </>
                   ) : (
-                    `Pay ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(booking.totalPrice)}`
+                    `Pay ${formatPrice(getPriceInSelectedCurrency(), selectedCurrency)}`
                   )}
                 </Button>
               </div>

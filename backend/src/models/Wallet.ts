@@ -7,11 +7,20 @@ export interface IWallet extends Document {
   currency: string;
   transactions: Array<{
     amount: number;
-    type: 'credit' | 'debit';
+    type: 'credit' | 'debit' | 'conversion';
     description: string;
     reference?: string;
     createdAt: Date;
+    metadata?: {
+      originalAmount?: number;
+      originalCurrency?: string;
+      [key: string]: any;
+    };
   }>;
+  metadata?: {
+    originalUsdBalance?: number;
+    [key: string]: any;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +43,10 @@ const WalletSchema: Schema = new Schema(
       required: true,
       default: 'USD',
     },
+    metadata: {
+      type: Object,
+      default: {},
+    },
     transactions: [
       {
         amount: {
@@ -42,7 +55,7 @@ const WalletSchema: Schema = new Schema(
         },
         type: {
           type: String,
-          enum: ['credit', 'debit'],
+          enum: ['credit', 'debit', 'conversion'],
           required: true,
         },
         description: {
@@ -55,6 +68,10 @@ const WalletSchema: Schema = new Schema(
         createdAt: {
           type: Date,
           default: Date.now,
+        },
+        metadata: {
+          type: Object,
+          default: {},
         },
       },
     ],
