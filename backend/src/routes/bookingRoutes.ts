@@ -9,6 +9,7 @@ import {
   updateBookingStatus,
   updatePaymentStatus,
   handlePaymentSuccess,
+  cancelBooking,
 } from '../controllers/bookingController';
 import { protect, admin } from '../middleware/authMiddleware';
 
@@ -40,5 +41,8 @@ router.patch('/:id/payment', protect, admin, updatePaymentStatus);
 
 // Add route for handling successful payments
 router.post('/:id/payment-success', protect, handlePaymentSuccess);
+
+// Cancel booking
+router.post('/:id/cancel', protect, cancelBooking);
 
 export default router; 

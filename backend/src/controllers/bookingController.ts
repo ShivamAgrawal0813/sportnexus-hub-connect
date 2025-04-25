@@ -2,7 +2,31 @@ import { Request, Response } from 'express';
 import Booking, { IBooking } from '../models/Booking';
 import Venue from '../models/Venue';
 import Equipment from '../models/Equipment';
+import Tutorial from '../models/Tutorial';
+import User from '../models/User';
 import mongoose from 'mongoose';
+import logger from '../utils/logger';
+import emailService from '../utils/emailService';
+
+// Helper function to get item name based on type
+const getItemNameById = async (
+  itemType: string, 
+  itemId: string | mongoose.Types.ObjectId
+): Promise<string> => {
+  switch (itemType) {
+    case 'venue':
+      const venue = await Venue.findById(itemId);
+      return venue ? venue.name : 'Unknown Venue';
+    case 'equipment':
+      const equipment = await Equipment.findById(itemId);
+      return equipment ? equipment.name : 'Unknown Equipment';
+    case 'tutorial':
+      const tutorial = await Tutorial.findById(itemId);
+      return tutorial ? tutorial.title : 'Unknown Tutorial';
+    default:
+      return 'Unknown Item';
+  }
+};
 
 // @desc    Create a new booking
 // @route   POST /api/bookings
@@ -11,8 +35,11 @@ export const createBooking = async (req: Request, res: Response) => {
   try {
     const { itemType, itemId, date, timeSlot, notes, subtotalPrice, totalPrice } = req.body;
     
+    logger.debug('Creating new booking', { itemType, itemId, date });
+    
     // Validate required fields
     if (!itemType || !itemId || !date) {
+      logger.warn('Missing required booking fields', { itemType, itemId, date });
       return res.status(400).json({ message: 'Please provide all required fields' });
     }
 
@@ -48,22 +75,50 @@ export const createBooking = async (req: Request, res: Response) => {
       if (itemType === 'venue') {
         const venue = await Venue.findById(itemId);
         if (!venue) {
+          logger.warn('Venue not found', { itemId });
           return res.status(404).json({ message: 'Venue not found' });
         }
 
-        // Check if venue is already booked for this time
-        const existingBooking = await Booking.findOne({
-          venue: itemId,
-          date: { $eq: new Date(date) },
-          status: { $in: ['pending', 'confirmed'] },
-          ...(timeSlot && {
-            'timeSlot.start': timeSlot.start,
-            'timeSlot.end': timeSlot.end
-          })
-        });
+        // Enhanced check for overlapping bookings
+        if (timeSlot) {
+          const proposedStartTime = timeSlot.start;
+          const proposedEndTime = timeSlot.end;
+          
+          // Convert time strings to integers for easier comparison (e.g., "09:00" -> 9)
+          const proposedStartHour = parseInt(proposedStartTime.split(':')[0]);
+          const proposedEndHour = parseInt(proposedEndTime.split(':')[0]);
+          
+          // Query for any bookings that overlap with the proposed time slot
+          const overlappingBooking = await Booking.findOne({
+            venue: itemId,
+            date: { $eq: new Date(date) },
+            status: { $in: ['pending', 'confirmed'] },
+            $and: [
+              // Existing booking starts before our proposed end time
+              { 'timeSlot.start': { $lt: proposedEndTime } },
+              // Existing booking ends after our proposed start time
+              { 'timeSlot.end': { $gt: proposedStartTime } }
+            ]
+          });
 
-        if (existingBooking) {
-          return res.status(400).json({ message: 'This venue is already booked for the selected time' });
+          if (overlappingBooking) {
+            logger.warn('Overlapping booking detected', { 
+              venueId: itemId, 
+              date, 
+              proposedTime: `${proposedStartTime}-${proposedEndTime}`,
+              existingTime: `${overlappingBooking.timeSlot?.start}-${overlappingBooking.timeSlot?.end}`
+            });
+            
+            return res.status(400).json({ 
+              message: 'This venue is already booked during the selected time period',
+              conflictingBooking: {
+                start: overlappingBooking.timeSlot?.start,
+                end: overlappingBooking.timeSlot?.end
+              }
+            });
+          }
+        } else {
+          return res.status(400).json({ message: 'Time slot is required for venue bookings' });
         }
 
         // Calculate price based on venue pricing and duration
@@ -89,6 +144,7 @@ export const createBooking = async (req: Request, res: Response) => {
         // Validate all equipment exists
         const equipment = await Equipment.find({ _id: { $in: equipmentIds } });
         if (equipment.length !== equipmentIds.length) {
+          logger.warn('Some equipment not found', { equipmentIds });
           return res.status(404).json({ message: 'One or more equipment items not found' });
         }
 
@@ -100,6 +156,7 @@ export const createBooking = async (req: Request, res: Response) => {
         });
 
         if (existingBooking) {
+          logger.warn('Equipment already booked', { equipmentIds, date });
           return res.status(400).json({ message: 'One or more equipment items are already booked for the selected date' });
         }
 
@@ -109,6 +166,7 @@ export const createBooking = async (req: Request, res: Response) => {
       }
       
       else {
+        logger.warn('Invalid item type', { itemType });
         return res.status(400).json({ message: 'Invalid item type' });
       }
       
@@ -119,16 +177,55 @@ export const createBooking = async (req: Request, res: Response) => {
     
     // Create the booking
     const booking = await Booking.create(bookingData);
+    logger.info('Booking created successfully', { bookingId: booking._id, userId: req.user!.id });
 
-    // Populate user and item details for response
+    // Populate user and item details for response and email
     const populatedBooking = await Booking.findById(booking._id)
       .populate('user', 'name email')
       .populate('venue')
       .populate('equipment');
+    
+    // Get user info for email notification
+    const user = await User.findById(req.user!.id);
+    if (user) {
+      // Get item name for the booking
+      let itemName = '';
+      if (itemType === 'venue' && populatedBooking?.venue) {
+        itemName = (populatedBooking.venue as any).name;
+      } else if (itemType === 'equipment' && populatedBooking?.equipment) {
+        // For equipment, we might have multiple items, just use the first one's name
+        const firstEquipment = Array.isArray(populatedBooking.equipment) 
+          ? populatedBooking.equipment[0] 
+          : populatedBooking.equipment;
+        itemName = firstEquipment ? (firstEquipment as any).name : 'Equipment';
+      } else {
+        // Fallback to fetching the name
+        itemName = await getItemNameById(itemType, itemId);
+      }
+
+      // Send booking confirmation email
+      emailService.sendBookingConfirmationEmail(
+        user.email,
+        user.name,
+        {
+          bookingId: booking._id.toString(),
+          itemType,
+          itemName,
+          date: booking.date,
+          timeSlot: booking.timeSlot,
+          totalPrice: booking.totalPrice
+        }
+      ).catch(error => {
+        logger.error('Failed to send booking confirmation email', { 
+          error: error instanceof Error ? error.message : String(error),
+          bookingId: booking._id
+        });
+      });
+    }
 
     res.status(201).json(populatedBooking);
   } catch (error: any) {
-    console.error('Create booking error:', error);
+    logger.error('Create booking error', { error: error.message });
     res.status(500).json({ 
       message: 'Server error while creating booking',
       error: error.message
@@ -239,43 +336,114 @@ export const getAllBookings = async (req: Request, res: Response) => {
   }
 };
 
-// @desc    Update booking status
+// @desc    Update a booking's status
 // @route   PATCH /api/bookings/:id/status
-// @access  Private/Admin
+// @access  Private
 export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
-    const { status } = req.body;
+    const { id } = req.params;
+    const { status, reason } = req.body;
     
-    // Validate that the status is one of the allowed values
+    logger.debug('Updating booking status', { bookingId: id, status });
+
     if (!status || !['pending', 'confirmed', 'canceled', 'completed'].includes(status)) {
+      logger.warn('Invalid booking status update', { status });
       return res.status(400).json({ message: 'Please provide a valid status' });
     }
-    
-    const booking = await Booking.findById(req.params.id);
+
+    // Find the booking
+    const booking = await Booking.findById(id);
     
     if (!booking) {
+      logger.warn('Booking not found for status update', { bookingId: id });
       return res.status(404).json({ message: 'Booking not found' });
     }
+
+    // Check if user owns the booking or is an admin
+    const isOwner = booking.user.toString() === req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
     
-    // Permission check: Regular users can only cancel their own bookings
-    if (req.user!.role !== 'admin' && status !== 'canceled') {
-      return res.status(403).json({ message: 'You do not have permission to update this booking status' });
+    if (!isOwner && !isAdmin) {
+      logger.warn('Unauthorized booking status update attempt', { 
+        bookingId: id, 
+        userId: req.user!.id,
+        isAdmin
+      });
+      return res.status(403).json({ message: 'Not authorized to update this booking' });
     }
-    
-    // Permission check: Regular users can only update their own bookings
-    if (req.user!.role !== 'admin' && booking.user.toString() !== req.user!.id) {
-      return res.status(403).json({ message: 'You do not have permission to update this booking' });
-    }
-    
-    // Update the status
+
+    // Update the booking status
+    const oldStatus = booking.status;
     booking.status = status;
+    
+    if (reason) {
+      // Store reason in metadata if provided
+      booking.metadata = {
+        ...booking.metadata,
+        statusUpdateReason: reason,
+        statusUpdatedAt: new Date(),
+        statusUpdatedBy: req.user!.id
+      };
+    }
+    
     await booking.save();
-    
-    // Handle any side effects (notifications, etc.)
-    
-    res.json(booking);
-  } catch (error) {
-    res.status(500).json({ message: 'Error updating booking status' });
+    logger.info('Booking status updated', { 
+      bookingId: id, 
+      oldStatus, 
+      newStatus: status 
+    });
+
+    // Send email notification if status changed
+    if (oldStatus !== status) {
+      // Get user info
+      const user = await User.findById(booking.user);
+      if (user) {
+        // Get item details
+        let itemName = '';
+        if (booking.itemType === 'venue' && booking.venue) {
+          itemName = await getItemNameById('venue', booking.venue);
+        } else if (booking.itemType === 'equipment' && booking.equipment) {
+          // For equipment, we might have multiple items
+          const equipmentId = Array.isArray(booking.equipment) 
+            ? booking.equipment[0] 
+            : booking.equipment;
+          itemName = await getItemNameById('equipment', equipmentId);
+        } else if (booking.itemType === 'tutorial' && booking.tutorial) {
+          itemName = await getItemNameById('tutorial', booking.tutorial);
+        }
+
+        // Send status update email
+        emailService.sendBookingStatusUpdateEmail(
+          user.email,
+          user.name,
+          {
+            bookingId: booking._id.toString(),
+            itemType: booking.itemType,
+            itemName,
+            date: booking.date,
+            timeSlot: booking.timeSlot,
+            status,
+            reason
+          }
+        ).catch(error => {
+          logger.error('Failed to send booking status update email', { 
+            error: error instanceof Error ? error.message : String(error),
+            bookingId: booking._id
+          });
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      booking
+    });
+  } catch (error: any) {
+    logger.error('Update booking status error', { error: error.message });
+    res.status(500).json({
+      message: 'Server error while updating booking status',
+      error: error.message
+    });
   }
 };
 
@@ -455,6 +623,182 @@ export const handlePaymentSuccess = async (req: Request, res: Response) => {
   }
 };
 
+// @desc    Cancel a booking with potential refund
+// @route   POST /api/bookings/:id/cancel
+// @access  Private
+export const cancelBooking = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    
+    logger.debug('Processing booking cancellation request', { bookingId: id });
+
+    // Find the booking
+    const booking = await Booking.findById(id);
+    
+    if (!booking) {
+      logger.warn('Booking not found for cancellation', { bookingId: id });
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    // Check if user owns the booking or is an admin
+    const isOwner = booking.user.toString() === req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      logger.warn('Unauthorized booking cancellation attempt', { 
+        bookingId: id, 
+        userId: req.user!.id 
+      });
+      return res.status(403).json({ message: 'Not authorized to cancel this booking' });
+    }
+
+    // Check if booking is already canceled or completed
+    if (booking.status === 'canceled') {
+      logger.warn('Attempted to cancel an already canceled booking', { bookingId: id });
+      return res.status(400).json({ message: 'Booking is already canceled' });
+    }
+
+    if (booking.status === 'completed') {
+      logger.warn('Attempted to cancel a completed booking', { bookingId: id });
+      return res.status(400).json({ message: 'Cannot cancel a completed booking' });
+    }
+
+    // Import cancellation policy dynamically to avoid circular dependencies
+    const cancellationPolicy = await import('../utils/cancellationPolicy');
+    
+    // Calculate refund amount based on the cancellation policy
+    const cancellationResult = cancellationPolicy.default.calculateCancellationFee(
+      booking.itemType,
+      booking.date,
+      booking.totalPrice
+    );
+
+    // Check if cancellation is allowed
+    if (!cancellationResult.canCancel) {
+      logger.warn('Cancellation not allowed', { 
+        bookingId: id, 
+        reason: cancellationResult.reason 
+      });
+      return res.status(400).json({ 
+        message: 'Cancellation not allowed', 
+        reason: cancellationResult.reason 
+      });
+    }
+
+    // Process cancellation
+    booking.status = 'canceled';
+    booking.metadata = {
+      ...booking.metadata,
+      cancellationReason: reason || 'Canceled by user',
+      canceledAt: new Date(),
+      canceledBy: req.user!.id,
+      refundPercentage: cancellationResult.refundPercentage,
+      refundAmount: cancellationResult.refundAmount,
+      cancellationFee: cancellationResult.cancellationFee
+    };
+    
+    await booking.save();
+    
+    logger.info('Booking canceled successfully', { 
+      bookingId: id, 
+      refundAmount: cancellationResult.refundAmount, 
+      refundPercentage: cancellationResult.refundPercentage 
+    });
+
+    // Process refund if applicable
+    let refundResult = null;
+    if (booking.paymentStatus === 'paid' && cancellationResult.refundAmount > 0) {
+      // Import payment service
+      const { processRefund } = await import('../utils/paymentService');
+      
+      // Process the refund
+      refundResult = await processRefund({
+        userId: booking.user.toString(),
+        bookingId: booking._id.toString(),
+        amount: cancellationResult.refundAmount,
+        reason: `Refund for canceled booking - ${cancellationResult.reason}`
+      });
+      
+      if (refundResult.success) {
+        logger.info('Refund processed for canceled booking', { 
+          bookingId: id, 
+          refundAmount: cancellationResult.refundAmount 
+        });
+        
+        // Update payment status
+        booking.paymentStatus = 'refunded';
+        await booking.save();
+      } else {
+        logger.error('Failed to process refund for canceled booking', { 
+          bookingId: id, 
+          error: refundResult.message 
+        });
+      }
+    }
+
+    // Send cancellation email notification
+    try {
+      // Get user info
+      const user = await User.findById(booking.user);
+      if (user) {
+        // Get item name
+        let itemName = '';
+        if (booking.itemType === 'venue' && booking.venue) {
+          itemName = await getItemNameById('venue', booking.venue);
+        } else if (booking.itemType === 'equipment' && booking.equipment) {
+          const equipmentId = Array.isArray(booking.equipment) 
+            ? booking.equipment[0] 
+            : booking.equipment;
+          itemName = await getItemNameById('equipment', equipmentId);
+        } else if (booking.itemType === 'tutorial' && booking.tutorial) {
+          itemName = await getItemNameById('tutorial', booking.tutorial);
+        }
+        
+        // Send email notification
+        const emailService = await import('../utils/emailService');
+        await emailService.default.sendBookingStatusUpdateEmail(
+          user.email,
+          user.name,
+          {
+            bookingId: booking._id.toString(),
+            itemType: booking.itemType,
+            itemName,
+            date: booking.date,
+            timeSlot: booking.timeSlot,
+            status: 'canceled',
+            reason: reason || cancellationResult.reason
+          }
+        );
+      }
+    } catch (error) {
+      logger.error('Failed to send cancellation email', { 
+        error: error instanceof Error ? error.message : String(error),
+        bookingId: id
+      });
+      // Don't return an error to the user, just log it
+    }
+
+    res.json({
+      success: true,
+      booking,
+      cancellationDetails: {
+        refundPercentage: cancellationResult.refundPercentage,
+        refundAmount: cancellationResult.refundAmount,
+        cancellationFee: cancellationResult.cancellationFee,
+        reason: cancellationResult.reason,
+        refundProcessed: refundResult?.success || false
+      }
+    });
+  } catch (error: any) {
+    logger.error('Booking cancellation error', { error: error.message });
+    res.status(500).json({
+      message: 'Server error while canceling booking',
+      error: error.message
+    });
+  }
+};
+
 export default {
   createBooking,
   getUserBookings,
@@ -464,5 +808,6 @@ export default {
   createEquipmentBooking,
   updateBookingStatus,
   updatePaymentStatus,
-  handlePaymentSuccess
+  handlePaymentSuccess,
+  cancelBooking
 }; 

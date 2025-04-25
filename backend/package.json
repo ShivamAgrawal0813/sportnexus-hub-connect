@@ -7,7 +7,8 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "db:check": "ts-node -e \"import connectDB from './src/config/db'; connectDB().then(() => { console.log('MongoDB connection successful'); process.exit(0); }).catch(err => { console.error('MongoDB connection error:', err); process.exit(1); });\"",
-    "test:api": "ts-node src/utils/testApi.ts"
+    "test:api": "ts-node src/utils/testApi.ts",
+    "test-reminder": "npm run build && node test-reminder.js"
   },
   "keywords": [],
   "author": "",
@@ -16,13 +17,16 @@
   "dependencies": {
     "@stripe/react-stripe-js": "^3.6.0",
     "@stripe/stripe-js": "^7.2.0",
+    "@types/nodemailer": "^6.4.17",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.2.3",
     "node-fetch": "^2.6.7",
+    "nodemailer": "^6.10.1",
     "stripe": "^18.0.0"
   },
   "devDependencies": {

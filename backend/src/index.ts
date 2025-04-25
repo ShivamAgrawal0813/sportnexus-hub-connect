@@ -15,6 +15,8 @@ import subscriptionRoutes from './routes/subscriptionRoutes';
 import discountRoutes from './routes/discountRoutes';
 import { isMongoDBRunning, getMongoDBInstallInstructions } from './utils/mongoCheck';
 import paymentRetry from './utils/paymentRetry';
+import bookingExpiration from './utils/bookingExpirationService';
+import bookingReminder from './utils/bookingReminderService';
 import logger from './utils/logger';
 
 // Load environment variables
@@ -65,6 +67,20 @@ const setupPaymentRetryScheduler = () => {
   }, ONE_HOUR);
   
   logger.info('Payment retry scheduler initialized');
+};
+
+// Setup background services
+const setupBackgroundServices = () => {
+  // Setup payment retry scheduler
+  setupPaymentRetryScheduler();
+  
+  // Setup booking expiration service
+  bookingExpiration.scheduleBookingExpirationJob();
+  
+  // Setup booking reminder service
+  bookingReminder.scheduleBookingReminders();
+  
+  logger.info('All background services initialized');
 };
 
 // Define routes
@@ -127,8 +143,8 @@ const startServer = async () => {
     logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     logger.info(`API available at http://localhost:${PORT}/api`);
     
-    // Setup payment retry scheduler after server starts
-    setupPaymentRetryScheduler();
+    // Setup background services after server starts
+    setupBackgroundServices();
   });
 };
 
