@@ -3,18 +3,16 @@ import getStripeInstance from '../config/stripe';
 import Payment from '../models/Payment';
 import Booking from '../models/Booking';
 import { createPaymentIntent, processWalletPayment, addFundsToWallet } from '../utils/paymentService';
+import logger from '../utils/logger';
 
 // Create a payment intent (for Stripe)
 export const createPayment = async (req: Request, res: Response) => {
   try {
-    console.log('Payment request received:', JSON.stringify(req.body, null, 2));
-    
     const { amount, currency, bookingId, paymentMethod, discountCode } = req.body;
-    
-    console.log('Payment parameters:', { amount, currency, bookingId, paymentMethod, discountCode });
+    logger.info('Payment request received', { amount, currency, bookingId, paymentMethod, discountCode });
     
     if (!amount || !currency || !paymentMethod) {
-      console.error('Missing required fields:', { amount, currency, paymentMethod });
+      logger.warn('Missing required payment fields', { amount, currency, paymentMethod });
       return res.status(400).json({
         success: false,
         message: 'Amount, currency, and payment method are required',
@@ -22,39 +20,38 @@ export const createPayment = async (req: Request, res: Response) => {
     }
     
     if (!req.user) {
-      console.error('User not authenticated');
+      logger.warn('Unauthenticated payment attempt');
       return res.status(401).json({
         success: false,
         message: 'User not authenticated',
       });
     }
     
-    console.log('User authenticated:', req.user.id);
     const userId = req.user.id;
     
     // If booking ID is provided, verify it exists and belongs to user
     if (bookingId) {
-      console.log('Verifying booking:', bookingId);
+      logger.debug('Verifying booking ownership', { bookingId, userId });
       const booking = await Booking.findOne({ _id: bookingId, user: userId });
       
       if (!booking) {
-        console.error('Booking not found or does not belong to user:', bookingId);
+        logger.warn('Booking not found or does not belong to user', { bookingId, userId });
         return res.status(404).json({
           success: false,
           message: 'Booking not found or does not belong to user',
         });
       }
-      console.log('Booking verified:', booking._id);
+      logger.debug('Booking verified', { bookingId });
     }
     
     // Process based on payment method
     if (paymentMethod === 'stripe') {
-      console.log('Processing Stripe payment');
+      logger.info('Processing Stripe payment', { amount, currency });
       
       // Check if Stripe is configured
       const stripe = getStripeInstance();
       if (!stripe) {
-        console.error('Stripe instance not available');
+        logger.error('Stripe not configured');
         return res.status(500).json({
           success: false,
           message: 'Stripe is not configured properly',
@@ -70,10 +67,10 @@ export const createPayment = async (req: Request, res: Response) => {
         discountCode,
       });
       
-      console.log('Payment intent result:', result);
+      logger.info('Payment intent result', { success: result.success });
       return res.status(result.success ? 200 : 400).json(result);
     } else if (paymentMethod === 'wallet') {
-      console.log('Processing wallet payment');
+      logger.info('Processing wallet payment', { amount, currency });
       const result = await processWalletPayment({
         amount,
         currency,
@@ -82,21 +79,22 @@ export const createPayment = async (req: Request, res: Response) => {
         description: `Payment for booking ${bookingId}`,
       });
       
-      console.log('Wallet payment result:', result);
+      logger.info('Wallet payment result', { success: result.success });
       return res.status(result.success ? 200 : 400).json(result);
     } else {
-      console.error('Unsupported payment method:', paymentMethod);
+      logger.warn('Unsupported payment method', { paymentMethod });
       return res.status(400).json({
         success: false,
         message: 'Unsupported payment method',
       });
     }
   } catch (error: unknown) {
-    console.error('Payment creation error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Payment creation error', { error: errorMessage });
     return res.status(500).json({
       success: false,
       message: 'An error occurred while processing payment',
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     });
   }
 };
@@ -105,6 +103,7 @@ export const createPayment = async (req: Request, res: Response) => {
 export const handleStripeWebhook = async (req: Request, res: Response) => {
   const stripe = getStripeInstance();
   if (!stripe) {
+    logger.error('Stripe not configured for webhook processing');
     return res.status(500).json({
       success: false,
       message: 'Stripe is not configured properly',
@@ -114,6 +113,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'];
   
   if (!sig || typeof sig !== 'string') {
+    logger.warn('Missing or invalid Stripe signature in webhook request');
     return res.status(400).json({
       success: false, 
       message: 'Stripe signature is missing or invalid'
@@ -123,6 +123,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
   try {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!webhookSecret) {
+      logger.error('Stripe webhook secret is not configured');
       return res.status(500).json({
         success: false,
         message: 'Stripe webhook secret is not configured'
@@ -134,6 +135,8 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
       sig,
       webhookSecret
     );
+    
+    logger.info('Stripe webhook event received', { eventType: event.type });
     
     switch (event.type) {
       case 'payment_intent.succeeded':
@@ -149,8 +152,9 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     
     res.json({ received: true });
   } catch (err: unknown) {
-    console.error('Webhook error:', err instanceof Error ? err.message : String(err));
-    return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : String(err)}`);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error('Webhook processing error', { error: errorMessage });
+    return res.status(400).send(`Webhook Error: ${errorMessage}`);
   }
 };
 
@@ -158,6 +162,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 export const getPaymentHistory = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
+      logger.warn('Unauthenticated access attempt to payment history');
       return res.status(401).json({
         success: false,
         message: 'User not authenticated',
@@ -165,21 +170,24 @@ export const getPaymentHistory = async (req: Request, res: Response) => {
     }
     
     const userId = req.user.id;
+    logger.debug('Retrieving payment history', { userId });
     
     const payments = await Payment.find({ user: userId })
       .sort({ createdAt: -1 })
       .populate('booking', 'date status');
     
+    logger.debug('Payment history retrieved', { userId, count: payments.length });
     return res.status(200).json({
       success: true,
       payments,
     });
   } catch (error: unknown) {
-    console.error('Get payment history error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Error retrieving payment history', { error: errorMessage });
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve payment history',
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     });
   }
 };
@@ -188,8 +196,10 @@ export const getPaymentHistory = async (req: Request, res: Response) => {
 export const processRefund = async (req: Request, res: Response) => {
   try {
     const { paymentId, reason } = req.body;
+    logger.info('Refund request received', { paymentId });
     
     if (!paymentId) {
+      logger.warn('Missing payment ID in refund request');
       return res.status(400).json({
         success: false,
         message: 'Payment ID is required',
@@ -197,6 +207,7 @@ export const processRefund = async (req: Request, res: Response) => {
     }
     
     if (!req.user) {
+      logger.warn('Unauthenticated refund attempt');
       return res.status(401).json({
         success: false,
         message: 'User not authenticated',
@@ -205,6 +216,7 @@ export const processRefund = async (req: Request, res: Response) => {
     
     // Only admins can process refunds
     if (req.user.role !== 'admin') {
+      logger.warn('Non-admin user attempted to process refund', { userId: req.user.id });
       return res.status(403).json({
         success: false,
         message: 'Only administrators can process refunds',
@@ -214,6 +226,7 @@ export const processRefund = async (req: Request, res: Response) => {
     const payment = await Payment.findById(paymentId);
     
     if (!payment) {
+      logger.warn('Payment not found for refund', { paymentId });
       return res.status(404).json({
         success: false,
         message: 'Payment not found',
@@ -221,6 +234,7 @@ export const processRefund = async (req: Request, res: Response) => {
     }
     
     if (payment.status === 'refunded') {
+      logger.warn('Attempted to refund already refunded payment', { paymentId });
       return res.status(400).json({
         success: false,
         message: 'Payment has already been refunded',
@@ -229,8 +243,10 @@ export const processRefund = async (req: Request, res: Response) => {
     
     // Process refund based on payment method
     if (payment.paymentMethod === 'stripe' && payment.stripePaymentId) {
+      logger.info('Processing Stripe refund', { paymentId, stripePaymentId: payment.stripePaymentId });
       const stripe = getStripeInstance();
       if (!stripe) {
+        logger.error('Stripe not configured for refund processing');
         return res.status(500).json({
           success: false,
           message: 'Stripe is not configured properly',
@@ -246,12 +262,14 @@ export const processRefund = async (req: Request, res: Response) => {
       payment.refundReason = reason || 'Refund requested by admin';
       await payment.save();
       
+      logger.info('Stripe refund processed successfully', { paymentId, refundId: refund.id });
       return res.status(200).json({
         success: true,
         message: 'Refund processed successfully',
         refund,
       });
     } else if (payment.paymentMethod === 'wallet') {
+      logger.info('Processing wallet refund', { paymentId });
       // For wallet payments, add the amount back to the user's wallet
       const { success, wallet } = await addFundsToWallet(
         payment.user instanceof Object ? payment.user.toString() : String(payment.user),
@@ -266,29 +284,33 @@ export const processRefund = async (req: Request, res: Response) => {
         payment.refundReason = reason || 'Refund requested by admin';
         await payment.save();
         
+        logger.info('Wallet refund processed successfully', { paymentId, walletId: wallet._id });
         return res.status(200).json({
           success: true,
           message: 'Refund processed successfully to user wallet',
           wallet,
         });
       } else {
+        logger.error('Failed to process wallet refund', { paymentId });
         return res.status(500).json({
           success: false,
           message: 'Failed to process refund to wallet',
         });
       }
     } else {
+      logger.warn('Unsupported payment method for refund', { paymentId, paymentMethod: payment.paymentMethod });
       return res.status(400).json({
         success: false,
         message: 'Unsupported payment method for refund',
       });
     }
   } catch (error: unknown) {
-    console.error('Refund processing error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Refund processing error', { error: errorMessage });
     return res.status(500).json({
       success: false,
       message: 'An error occurred while processing the refund',
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     });
   }
 };
@@ -296,15 +318,15 @@ export const processRefund = async (req: Request, res: Response) => {
 // Helper functions
 const handleSuccessfulPayment = async (paymentIntent: any) => {
   try {
-    console.log('Processing successful payment:', paymentIntent.id);
+    logger.info('Processing successful payment', { paymentIntentId: paymentIntent.id });
     const { userId, bookingId } = paymentIntent.metadata;
     
     if (!userId) {
-      console.error('Missing userId in payment intent metadata');
+      logger.error('Missing userId in payment intent metadata', { paymentIntentId: paymentIntent.id });
       return;
     }
     
-    console.log('Payment metadata:', { userId, bookingId });
+    logger.debug('Payment metadata received', { userId, bookingId });
     
     // Update the payment status in our database
     const payment = await Payment.findOneAndUpdate(
@@ -314,15 +336,15 @@ const handleSuccessfulPayment = async (paymentIntent: any) => {
     );
     
     if (!payment) {
-      console.error('Payment record not found for Stripe payment ID:', paymentIntent.id);
+      logger.error('Payment record not found for Stripe payment', { paymentIntentId: paymentIntent.id });
       return;
     }
     
-    console.log('Payment status updated:', payment._id);
+    logger.debug('Payment status updated', { paymentId: payment._id });
     
     // If there's a booking associated, update its payment status
     if (bookingId) {
-      console.log('Updating booking status for:', bookingId);
+      logger.debug('Updating booking status', { bookingId });
       const booking = await Booking.findByIdAndUpdate(
         bookingId, 
         { 
@@ -333,19 +355,21 @@ const handleSuccessfulPayment = async (paymentIntent: any) => {
       );
       
       if (!booking) {
-        console.error('Booking not found:', bookingId);
+        logger.error('Booking not found for payment', { bookingId });
       } else {
-        console.log('Booking updated successfully:', booking._id);
+        logger.info('Booking updated successfully', { bookingId });
       }
     }
   } catch (error) {
-    console.error('Error handling successful payment:', error instanceof Error ? error.message : String(error));
+    logger.error('Error handling successful payment', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
   }
 };
 
 const handleFailedPayment = async (paymentIntent: any) => {
   try {
-    console.log('Processing failed payment:', paymentIntent.id);
+    logger.info('Processing failed payment', { paymentIntentId: paymentIntent.id });
     
     // Update the payment status in our database
     const payment = await Payment.findOneAndUpdate(
@@ -355,17 +379,17 @@ const handleFailedPayment = async (paymentIntent: any) => {
     );
     
     if (!payment) {
-      console.error('Payment record not found for Stripe payment ID:', paymentIntent.id);
+      logger.error('Payment record not found for failed Stripe payment', { paymentIntentId: paymentIntent.id });
       return;
     }
     
-    console.log('Payment status updated to failed:', payment._id);
+    logger.debug('Payment status updated to failed', { paymentId: payment._id });
     
     // Update booking status if applicable
     const { bookingId } = paymentIntent.metadata;
     
     if (bookingId) {
-      console.log('Updating booking payment status to failed for:', bookingId);
+      logger.debug('Updating booking payment status to failed', { bookingId });
       const booking = await Booking.findByIdAndUpdate(
         bookingId, 
         { paymentStatus: 'failed' },
@@ -373,12 +397,14 @@ const handleFailedPayment = async (paymentIntent: any) => {
       );
       
       if (!booking) {
-        console.error('Booking not found:', bookingId);
+        logger.error('Booking not found for failed payment', { bookingId });
       } else {
-        console.log('Booking payment status updated to failed:', booking._id);
+        logger.info('Booking payment status updated to failed', { bookingId });
       }
     }
   } catch (error) {
-    console.error('Error handling failed payment:', error instanceof Error ? error.message : String(error));
+    logger.error('Error handling failed payment', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
   }
 }; 

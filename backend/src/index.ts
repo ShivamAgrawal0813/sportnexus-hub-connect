@@ -14,6 +14,8 @@ import walletRoutes from './routes/walletRoutes';
 import subscriptionRoutes from './routes/subscriptionRoutes';
 import discountRoutes from './routes/discountRoutes';
 import { isMongoDBRunning, getMongoDBInstallInstructions } from './utils/mongoCheck';
+import paymentRetry from './utils/paymentRetry';
+import logger from './utils/logger';
 
 // Load environment variables
 dotenv.config();
@@ -33,18 +35,36 @@ const initializeDatabase = async () => {
     if (process.env.MONGODB_URI?.includes('localhost') || process.env.MONGODB_URI?.includes('127.0.0.1')) {
       const isRunning = await isMongoDBRunning();
       if (!isRunning) {
-        console.error('\x1b[31m%s\x1b[0m', 'MongoDB is not running locally!');
-        console.log('\x1b[33m%s\x1b[0m', getMongoDBInstallInstructions());
+        logger.error('MongoDB is not running locally!');
+        logger.info(getMongoDBInstallInstructions());
         // Continue anyway for development purposes
       }
     }
     
     // Attempt to connect to MongoDB
     await connectDB();
-    console.log('\x1b[32m%s\x1b[0m', 'Database connection initialized');
+    logger.info('Database connection initialized');
   } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', 'Failed to initialize database:', error);
+    logger.error('Failed to initialize database:', { error });
   }
+};
+
+// Setup payment retry scheduler
+const setupPaymentRetryScheduler = () => {
+  // Initial run on server start after a short delay
+  setTimeout(() => {
+    paymentRetry.scheduleFailedPaymentRetries()
+      .catch(error => logger.error('Error in initial payment retry schedule', { error }));
+  }, 10000); // Wait 10 seconds after server start
+  
+  // Schedule to run every hour
+  const ONE_HOUR = 60 * 60 * 1000;
+  setInterval(() => {
+    paymentRetry.scheduleFailedPaymentRetries()
+      .catch(error => logger.error('Error in scheduled payment retry', { error }));
+  }, ONE_HOUR);
+  
+  logger.info('Payment retry scheduler initialized');
 };
 
 // Define routes
@@ -67,7 +87,7 @@ app.get('/api/test', (req: Request, res: Response) => {
 
 // Test POST route to verify request body parsing
 app.post('/api/test-post', (req: Request, res: Response) => {
-  console.log('Received POST data:', req.body);
+  logger.debug('Received POST data', { body: req.body });
   res.json({ 
     success: true, 
     message: 'POST request received successfully!',
@@ -104,8 +124,11 @@ const startServer = async () => {
   await initializeDatabase();
   
   app.listen(PORT, () => {
-    console.log('\x1b[36m%s\x1b[0m', `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-    console.log('\x1b[36m%s\x1b[0m', `API available at http://localhost:${PORT}/api`);
+    logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    logger.info(`API available at http://localhost:${PORT}/api`);
+    
+    // Setup payment retry scheduler after server starts
+    setupPaymentRetryScheduler();
   });
 };
 

@@ -5,7 +5,7 @@ import {
   useElements 
 } from '@stripe/react-stripe-js';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { API_URL } from '@/lib/constants';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -33,6 +33,8 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
   const elements = useElements();
   const [internalLoading, setInternalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const { toast } = useToast();
   
   // Use either external or internal loading state
@@ -61,11 +63,145 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
     );
   }
 
+  // Function to create payment intent
+  const createPaymentIntent = async () => {
+    const paymentRequestData = {
+      amount: Number(amount),
+      currency: currency.toLowerCase(),
+      bookingId,
+      discountCode,
+      paymentMethod: 'stripe'
+    };
+    
+    setPaymentData(paymentRequestData);
+    
+    // Call your backend to create a payment intent
+    const response = await fetch(`${API_URL}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(paymentRequestData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = 'Payment service unavailable';
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorMessage;
+      } catch (e) {
+        // If JSON parsing fails, use generic error message
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    const responseText = await response.text();
+    let data;
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error('Invalid response from payment service');
+    }
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to create payment intent');
+    }
+    
+    return data;
+  };
+  
+  // Function to confirm card payment
+  const confirmCardPayment = async (clientSecret: string) => {
+    if (!stripe || !elements) {
+      throw new Error('Stripe not initialized');
+    }
+    
+    const cardElement = elements.getElement(CardElement);
+
+    if (!cardElement) {
+      throw new Error('Card information not provided');
+    }
+
+    // Confirm the payment with the card details
+    const paymentResult = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: cardElement,
+        billing_details: {
+          // You can add more billing details here if needed
+        },
+      },
+    });
+
+    if (paymentResult.error) {
+      throw new Error(paymentResult.error.message || 'Payment failed');
+    } 
+    
+    if (paymentResult.paymentIntent.status === 'succeeded') {
+      return paymentResult.paymentIntent;
+    } else {
+      throw new Error('Payment not completed');
+    }
+  };
+
+  // Handle retry logic
+  const handleRetry = async () => {
+    if (retryCount >= 3) {
+      setError('Maximum retry attempts reached. Please try again later or use a different payment method.');
+      return;
+    }
+    
+    setInternalLoading(true);
+    setError(null);
+    setRetryCount(prevCount => prevCount + 1);
+    
+    try {
+      await processPayment();
+    } catch (err: any) {
+      const userFriendlyError = 'Payment failed. Please verify your card details and try again.';
+      setError(userFriendlyError);
+      
+      toast({
+        title: 'Payment Failed',
+        description: userFriendlyError,
+        variant: 'destructive',
+      });
+    } finally {
+      setInternalLoading(false);
+    }
+  };
+  
+  // Process the payment
+  const processPayment = async () => {
+    try {
+      // Create or use existing payment intent
+      const data = paymentData ? await createPaymentIntent() : await createPaymentIntent();
+      
+      // Confirm the payment
+      const paymentIntent = await confirmCardPayment(data.clientSecret);
+      
+      // Payment succeeded
+      toast({
+        title: 'Payment Successful',
+        description: 'Your payment was processed successfully.',
+        variant: 'default',
+      });
+      
+      onSuccess(paymentIntent);
+      return true;
+    } catch (err) {
+      throw err;
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     if (!stripe || !elements) {
-      // Stripe.js hasn't loaded yet
       return;
     }
 
@@ -73,91 +209,22 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
     setError(null);
 
     try {
-      const paymentData = {
-        amount: Number(amount),
-        currency: currency.toLowerCase(),
-        bookingId,
-        discountCode,
-        paymentMethod: 'stripe'
-      };
-      
-      console.log('Creating payment intent with data:', paymentData);
-      
-      // Call your backend to create a payment intent
-      const response = await fetch(`${API_URL}/payments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(paymentData),
-      });
-
-      const responseText = await response.text();
-      
-      console.log('Raw API response:', responseText);
-      
-      if (!response.ok) {
-        console.error('Payment API error:', response.status, response.statusText, responseText);
-        throw new Error(`Payment API error: ${response.status} ${response.statusText}`);
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.error('Error parsing JSON response:', e);
-        throw new Error('Invalid response format from server');
-      }
-      
-      console.log('Payment intent created:', data);
-
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to create payment intent');
-      }
-
-      // Use the client secret from the payment intent
-      const cardElement = elements.getElement(CardElement);
-
-      if (!cardElement) {
-        throw new Error('Card element not found');
-      }
-
-      console.log('Confirming payment with client secret');
-      // Confirm the payment with the card details
-      const paymentResult = await stripe.confirmCardPayment(data.clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
-            // You can add more billing details here if needed
-          },
-        },
-      });
-
-      console.log('Payment result:', paymentResult);
-
-      if (paymentResult.error) {
-        throw new Error(paymentResult.error.message || 'Payment failed');
-      } else if (paymentResult.paymentIntent.status === 'succeeded') {
-        // Payment succeeded
-        toast({
-          title: 'Payment Successful',
-          description: 'Your payment was processed successfully.',
-          variant: 'default',
-        });
-        onSuccess(paymentResult.paymentIntent);
-      }
+      await processPayment();
     } catch (err: any) {
-      console.error('Payment processing error:', err);
-      setError(err.message || 'An error occurred while processing payment');
+      // Set a user-friendly error message
+      const userFriendlyError = 'Payment failed. Please verify your card details and try again.';
+      setError(userFriendlyError);
+      
       toast({
         title: 'Payment Failed',
-        description: err.message || 'An error occurred while processing payment',
+        description: userFriendlyError,
         variant: 'destructive',
       });
+      
+      // Pass the actual error to the handler for logging
       onError(err);
     } finally {
-      setInternalLoading(false); // Only reset internal loading state
+      setInternalLoading(false);
     }
   };
 
@@ -183,8 +250,21 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
       </div>
       
       {error && (
-        <div className="text-red-500 text-sm">
-          {error}
+        <div className="text-red-500 text-sm flex items-center justify-between">
+          <span>{error}</span>
+          {retryCount < 3 && (
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRetry} 
+              disabled={isLoading}
+              className="ml-2"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Retry
+            </Button>
+          )}
         </div>
       )}
       
