@@ -8,9 +8,11 @@ export interface IPayment extends Document {
   amount: number;
   currency: string;
   status: 'pending' | 'completed' | 'failed' | 'refunded';
-  paymentMethod: 'stripe' | 'paypal' | 'wallet';
+  paymentMethod: 'stripe' | 'paypal' | 'wallet' | 'card';
   stripePaymentId?: string;
   paypalPaymentId?: string;
+  itemType?: 'venue' | 'equipment' | 'tutorial';
+  itemId?: mongoose.Types.ObjectId;
   metadata?: Record<string, any>;
   refundReason?: string;
   createdAt: Date;
@@ -46,13 +48,20 @@ const PaymentSchema: Schema = new Schema(
     paymentMethod: {
       type: String,
       required: true,
-      enum: ['stripe', 'paypal', 'wallet'],
+      enum: ['stripe', 'paypal', 'wallet', 'card'],
     },
     stripePaymentId: {
       type: String,
     },
     paypalPaymentId: {
       type: String,
+    },
+    itemType: {
+      type: String,
+      enum: ['venue', 'equipment', 'tutorial'],
+    },
+    itemId: {
+      type: Schema.Types.ObjectId,
     },
     metadata: {
       type: Map,

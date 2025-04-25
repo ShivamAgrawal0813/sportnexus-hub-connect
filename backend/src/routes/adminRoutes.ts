@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { protect, admin } from '../middleware/auth';
+import { protect, admin } from '../middleware/authMiddleware';
 import adminBookingController from '../controllers/adminBookingController';
 import adminController from '../controllers/adminController';
 

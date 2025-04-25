@@ -5,7 +5,7 @@ import {
   createSubscription,
   cancelSubscription,
 } from '../controllers/subscriptionController';
-import { authenticate } from '../middleware/authMiddleware';
+import { protect } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ const router = express.Router();
 router.get('/plans', getSubscriptionPlans);
 
 // Routes that require authentication
-router.use(authenticate);
+router.use(protect);
 
 // Get user's subscription
 router.get('/', getUserSubscription);

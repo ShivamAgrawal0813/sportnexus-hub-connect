@@ -11,11 +11,12 @@ declare global {
 }
 
 // Authenticate middleware - protects routes
-export const authenticate = async (
+export const protect = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
+  console.log('Auth middleware running...');
   let token;
 
   // Check if auth header exists and starts with Bearer
@@ -26,6 +27,7 @@ export const authenticate = async (
     try {
       // Get token from header
       token = req.headers.authorization.split(' ')[1];
+      console.log('Token received:', token);
       
       if (!token) {
         return res.status(401).json({ message: 'Not authorized, empty token' });
@@ -33,7 +35,9 @@ export const authenticate = async (
 
       // Verify token
       try {
+        console.log('Verifying JWT token...');
         const decoded = verifyToken(token);
+        console.log('Token decoded successfully:', decoded);
         // Add user from payload to request
         req.user = decoded;
         next();
@@ -60,17 +64,32 @@ export const authenticate = async (
   }
 };
 
-// Authorize middleware - restricts to specific roles
-export const authorize = (role: string) => {
+// Middleware to restrict access to admin users only
+export const admin = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Not authorized, authentication required' });
+  }
+  
+  if (req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ message: 'Not authorized. Admin access required' });
+  }
+};
+
+// Middleware to restrict access to specific roles
+export const restrictTo = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Not authorized, authentication required' });
     }
     
-    if (req.user.role === role) {
+    if (roles.includes(req.user.role)) {
       next();
     } else {
-      res.status(403).json({ message: `Not authorized as ${role}` });
+      res.status(403).json({ 
+        message: `Not authorized. Required role: ${roles.join(' or ')}` 
+      });
     }
   };
 }; 

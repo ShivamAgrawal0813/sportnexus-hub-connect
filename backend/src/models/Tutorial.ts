@@ -18,6 +18,8 @@ export interface ITutorial extends Document {
   }[];
   likes: number;
   views: number;
+  tutorialType: 'Free' | 'Premium';
+  price: number; // price in dollars, 0 for free tutorials
   createdAt: Date;
   updatedAt: Date;
 }
@@ -82,6 +84,30 @@ const TutorialSchema = new Schema<ITutorial>(
     views: {
       type: Number,
       default: 0,
+    },
+    tutorialType: {
+      type: String,
+      enum: ['Free', 'Premium'],
+      required: [true, 'Tutorial type is required'],
+      default: 'Free',
+    },
+    price: {
+      type: Number,
+      default: 0,
+      validate: {
+        validator: function(this: ITutorial, value: number) {
+          // Free tutorials must have price 0
+          if (this.tutorialType === 'Free' && value !== 0) {
+            return false;
+          }
+          // Premium tutorials must have price > 0
+          if (this.tutorialType === 'Premium' && value <= 0) {
+            return false;
+          }
+          return true;
+        },
+        message: 'Free tutorials must have price 0 and Premium tutorials must have price greater than 0'
+      }
     },
   },
   {

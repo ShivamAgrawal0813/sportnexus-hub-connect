@@ -27,6 +27,8 @@ interface TutorialCardProps {
     tags: string[];
     likes: number;
     views: number;
+    tutorialType: 'Free' | 'Premium';
+    price: number;
   };
 }
 
@@ -45,6 +47,19 @@ export function TutorialCard({ tutorial }: TutorialCardProps) {
       case 'All Levels': return 'secondary';
       default: return 'outline';
     }
+  };
+
+  // Get badge variant for tutorial type
+  const tutorialTypeVariant = () => {
+    return tutorial.tutorialType === 'Premium' ? 'destructive' : 'success';
+  };
+
+  // Format price
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(price);
   };
 
   // Format duration to show in minutes
@@ -72,11 +87,21 @@ export function TutorialCard({ tutorial }: TutorialCardProps) {
             {tutorial.skillLevel}
           </Badge>
         </div>
+        <div className="absolute top-2 left-2">
+          <Badge variant={tutorialTypeVariant()} className="text-white">
+            {tutorial.tutorialType}
+          </Badge>
+        </div>
       </div>
       
       <CardHeader className="pb-2">
         <div className="space-y-1">
-          <CardTitle className="text-xl line-clamp-1">{tutorial.title}</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-xl line-clamp-1">{tutorial.title}</CardTitle>
+            {tutorial.tutorialType === 'Premium' && (
+              <span className="text-lg font-bold text-primary">{formatPrice(tutorial.price)}</span>
+            )}
+          </div>
           <div className="flex items-center text-muted-foreground text-sm">
             <BookOpen className="h-4 w-4 mr-1" />
             <span>By {tutorial.author.name}</span>

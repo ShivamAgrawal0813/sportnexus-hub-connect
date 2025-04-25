@@ -6,12 +6,12 @@ import {
   getTransactions,
   updateWalletCurrency
 } from '../controllers/walletController';
-import { authenticate } from '../middleware/authMiddleware';
+import { protect } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
 // All wallet routes require authentication
-router.use(authenticate);
+router.use(protect);
 
 // Get user's wallet
 router.get('/', getWallet);

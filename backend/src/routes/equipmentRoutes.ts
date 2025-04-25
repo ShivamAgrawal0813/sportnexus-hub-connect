@@ -7,7 +7,7 @@ import {
   deleteEquipment,
   updateInventory,
 } from '../controllers/equipmentController';
-import { protect, admin } from '../middleware/auth';
+import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
 

@@ -5,13 +5,13 @@ import {
   getPaymentHistory,
   processRefund,
 } from '../controllers/paymentController';
-import { authenticate, authorize } from '../middleware/authMiddleware';
+import { protect, restrictTo } from '../middleware/authMiddleware';
 import bodyParser from 'body-parser';
 
 const router = express.Router();
 
 // Routes that require authentication
-router.use(authenticate);
+router.use(protect);
 
 // Create a payment intent
 router.post('/', createPayment);
@@ -20,7 +20,7 @@ router.post('/', createPayment);
 router.get('/history', getPaymentHistory);
 
 // Process refund (admin only)
-router.post('/refund', authorize('admin'), processRefund);
+router.post('/refund', restrictTo('admin'), processRefund);
 
 // Stripe webhook route - needs raw body for signature verification
 router.post(

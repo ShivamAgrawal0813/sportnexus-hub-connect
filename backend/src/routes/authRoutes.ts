@@ -8,7 +8,7 @@ import {
   removeFromFavorites,
   createAdmin
 } from '../controllers/authController';
-import { protect } from '../middleware/auth';
+import { protect } from '../middleware/authMiddleware';
 
 const router = express.Router();
 

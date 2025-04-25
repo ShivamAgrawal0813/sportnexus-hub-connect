@@ -10,7 +10,7 @@ import {
   updatePaymentStatus,
   handlePaymentSuccess,
 } from '../controllers/bookingController';
-import { protect, admin } from '../middleware/auth';
+import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
 

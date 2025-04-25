@@ -6,7 +6,7 @@ import {
   updateVenue,
   deleteVenue,
 } from '../controllers/venueController';
-import { protect, admin } from '../middleware/auth';
+import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
 

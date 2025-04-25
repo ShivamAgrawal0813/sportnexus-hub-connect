@@ -6,20 +6,20 @@ import {
   deleteDiscount,
   validateDiscount,
 } from '../controllers/discountController';
-import { authenticate, authorize } from '../middleware/authMiddleware';
+import { protect, restrictTo } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
 // Routes that require authentication
-router.use(authenticate);
+router.use(protect);
 
 // Validate discount code (for users)
 router.post('/validate', validateDiscount);
 
 // Admin-only routes
-router.get('/', authorize('admin'), getAllDiscounts);
-router.post('/', authorize('admin'), createDiscount);
-router.put('/:id', authorize('admin'), updateDiscount);
-router.delete('/:id', authorize('admin'), deleteDiscount);
+router.get('/', restrictTo('admin'), getAllDiscounts);
+router.post('/', restrictTo('admin'), createDiscount);
+router.put('/:id', restrictTo('admin'), updateDiscount);
+router.delete('/:id', restrictTo('admin'), deleteDiscount);
 
 export default router; 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { PlusIcon, Trash2Icon } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -42,6 +43,21 @@ const tutorialSchema = z.object({
   duration: z.number().int().positive("Duration must be positive"),
   tags: z.array(z.string()),
   resources: z.array(resourceSchema),
+  tutorialType: z.enum(["Free", "Premium"]),
+  price: z.number().min(0, "Price cannot be negative"),
+}).refine((data) => {
+  // If tutorial is Free, price must be 0
+  if (data.tutorialType === "Free" && data.price !== 0) {
+    return false;
+  }
+  // If tutorial is Premium, price must be > 0
+  if (data.tutorialType === "Premium" && data.price <= 0) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Free tutorials must have price 0 and Premium tutorials must have a price greater than 0",
+  path: ["price"],
 });
 
 type TutorialForm = z.infer<typeof tutorialSchema>;
@@ -54,6 +70,7 @@ const sportTypeOptions = [
 
 const skillLevelOptions = ["Beginner", "Intermediate", "Advanced", "All Levels"];
 const resourceTypeOptions = ["Video", "PDF", "Article", "Link"];
+const tutorialTypeOptions = ["Free", "Premium"];
 
 export default function AddTutorial() {
   const { user } = useAuth();
@@ -77,8 +94,20 @@ export default function AddTutorial() {
       duration: 0,
       tags: [],
       resources: [],
+      tutorialType: "Free",
+      price: 0,
     },
   });
+
+  // Update price when tutorial type changes
+  useEffect(() => {
+    const tutorialType = form.watch("tutorialType");
+    if (tutorialType === "Free") {
+      form.setValue("price", 0);
+    } else if (tutorialType === "Premium" && form.getValues("price") === 0) {
+      form.setValue("price", 9.99);
+    }
+  }, [form.watch("tutorialType")]);
 
   const createTutorial = useMutation({
     mutationFn: async (data: TutorialForm) => {
@@ -235,6 +264,79 @@ export default function AddTutorial() {
               )}
             />
           </div>
+
+          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FormField
+              control={form.control}
+              name="tutorialType"
+              render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel>Tutorial Type</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      className="flex space-x-4"
+                    >
+                      {tutorialTypeOptions.map((type) => (
+                        <FormItem key={type} className="flex items-center space-x-2">
+                          <FormControl>
+                            <RadioGroupItem value={type} checked={field.value === type} />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer">{type}</FormLabel>
+                        </FormItem>
+                      ))}
+                    </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="price"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Price ($)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      min={form.watch("tutorialType") === "Free" ? 0 : 0.01}
+                      step={0.01}
+                      placeholder="Enter price" 
+                      {...field} 
+                      onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                      value={field.value}
+                      disabled={form.watch("tutorialType") === "Free"}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="duration"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Duration (minutes)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      min={1}
+                      placeholder="Enter duration in minutes" 
+                      {...field} 
+                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      value={field.value}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
         </div>
 
         <FormField
@@ -302,25 +404,6 @@ export default function AddTutorial() {
             )}
           />
         </div>
-
-        <FormField
-          control={form.control}
-          name="duration"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Duration (minutes)</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  {...field}
-                  onChange={(e) => field.onChange(parseInt(e.target.value))}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
 
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Tags</h3>

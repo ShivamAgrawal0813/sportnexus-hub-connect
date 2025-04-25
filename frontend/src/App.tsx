@@ -1,5 +1,4 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -37,7 +36,16 @@ const PageLoading = () => (
   </div>
 );
 
-const queryClient = new QueryClient();
+// Configure React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+});
 
 const AppRoutes = () => (
   <Routes>
@@ -153,15 +161,14 @@ const AppRoutes = () => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
+    <AuthProvider>
       <BrowserRouter>
-        <AuthProvider>
+        <TooltipProvider>
           <AppRoutes />
-        </AuthProvider>
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
       </BrowserRouter>
-    </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
