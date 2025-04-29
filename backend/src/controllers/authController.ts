@@ -10,6 +10,7 @@ import {
 } from '../utils/passwordResetUtils';
 import emailService from '../utils/emailService';
 import logger from '../utils/logger';
+import { verifyGoogleToken } from '../config/google.config';
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -412,6 +413,71 @@ export const resetPassword = async (req: Request, res: Response) => {
   }
 };
 
+export const googleAuth = async (req: Request, res: Response) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({ message: 'Google token is required' });
+    }
+
+    try {
+      // Verify the Google token
+      const googleUser = await verifyGoogleToken(credential);
+      console.log('Google user verified:', googleUser);
+
+      // Check if user exists
+      let user = await User.findOne({ email: googleUser.email });
+      console.log('Existing user found:', user ? 'Yes' : 'No');
+
+      if (!user) {
+        // Create new user if doesn't exist
+        const newUserData = {
+          email: googleUser.email,
+          name: googleUser.name,
+          profilePicture: googleUser.picture,
+          isEmailVerified: true, // Google accounts are already verified
+          authProvider: 'google',
+          role: 'user', // Add default role
+          passwordHash: 'google-oauth' // Add a placeholder password hash
+        };
+        console.log('Creating new user with data:', newUserData);
+        
+        user = await User.create(newUserData);
+        console.log('New user created:', user._id);
+      }
+
+      // Generate JWT token
+      const token = generateToken(user);
+      console.log('JWT token generated successfully');
+
+      res.status(200).json({
+        message: 'Successfully authenticated with Google',
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          profilePicture: user.profilePicture,
+          role: user.role
+        },
+        token
+      });
+    } catch (verificationError) {
+      console.error('Google token verification error:', verificationError);
+      return res.status(401).json({ 
+        message: 'Failed to verify Google token',
+        error: verificationError instanceof Error ? verificationError.message : 'Unknown error'
+      });
+    }
+  } catch (error) {
+    console.error('Google authentication error:', error);
+    res.status(500).json({ 
+      message: 'Authentication failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
 export default {
   register,
   login,
@@ -421,5 +487,6 @@ export default {
   removeFromFavorites,
   createAdmin,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  googleAuth
 }; 

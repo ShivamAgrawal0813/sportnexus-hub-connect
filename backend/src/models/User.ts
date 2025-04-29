@@ -6,6 +6,9 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   role: 'user' | 'admin';
+  authProvider?: 'local' | 'google';
+  profilePicture?: string;
+  isEmailVerified?: boolean;
   profile?: {
     avatar?: string;
     bio?: string;
@@ -49,6 +52,16 @@ const UserSchema = new Schema<IUser>({
     enum: ['user', 'admin'],
     default: 'user',
   },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
+  },
+  profilePicture: String,
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
   profile: {
     avatar: String,
     bio: String,
@@ -81,15 +94,19 @@ UserSchema.pre('validate', function(next) {
     id: this._id,
     name: this.name,
     email: this.email,
+    authProvider: this.authProvider,
     passwordHashLength: this.passwordHash ? this.passwordHash.length : 0
   });
   next();
 });
 
-// Hash password before saving
+// Hash password before saving only for local auth
 UserSchema.pre('save', async function (next) {
-  console.log('Pre-save hook running for user. Already hashed in controller, no need to hash again.');
-  // We're now handling the hashing in the controller, so we don't need to do it again here
+  if (this.authProvider === 'google') {
+    console.log('Google auth user, skipping password hash');
+    return next();
+  }
+  console.log('Local auth user, password already hashed in controller');
   next();
 });
 
@@ -97,6 +114,9 @@ UserSchema.pre('save', async function (next) {
 UserSchema.methods.comparePassword = async function (
   password: string
 ): Promise<boolean> {
+  if (this.authProvider === 'google') {
+    return false; // Google users can't login with password
+  }
   return bcrypt.compare(password, this.passwordHash);
 };
 

@@ -8,7 +8,8 @@ import {
   removeFromFavorites,
   createAdmin,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  googleAuth
 } from '../controllers/authController';
 import { protect } from '../middleware/authMiddleware';
 
@@ -19,6 +20,9 @@ router.post('/register', register as RequestHandler);
 
 // @route   POST /api/auth/login
 router.post('/login', login as RequestHandler);
+
+// @route   POST /api/auth/google
+router.post('/google', googleAuth as RequestHandler);
 
 // @route   GET /api/auth/me
 router.get('/me', protect as RequestHandler, getCurrentUser as RequestHandler);

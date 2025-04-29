@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/context/AuthContext";
+import GoogleSignIn from "@/components/GoogleSignIn";
 
 // Form validation schema
 const loginSchema = z.object({
@@ -62,7 +64,7 @@ export default function LoginPage() {
             Enter your credentials to access your account
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -101,6 +103,19 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+          
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <Separator className="w-full" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
+
+          <GoogleSignIn />
         </CardContent>
         <CardFooter className="flex flex-col items-center">
           <div className="text-sm text-muted-foreground">

@@ -8,6 +8,7 @@ interface User {
   name: string;
   email: string;
   role: 'user' | 'admin';
+  profilePicture?: string;
   profile?: {
     avatar?: string;
     bio?: string;
@@ -33,6 +34,9 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateProfile: (profileData: Partial<User>) => Promise<boolean>;
+  setUser: (user: User | null) => void;
+  setToken: (token: string | null) => void;
+  setIsAuthenticated: (value: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -74,6 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadUser();
   }, []);
 
+  const setToken = (token: string | null) => {
+    if (token) {
+      localStorage.setItem('token', token);
+    } else {
+      localStorage.removeItem('token');
+    }
+  };
+
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await axios.post(`${API_URL}/auth/login`, {
@@ -83,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const { token, ...userData } = response.data;
       
-      localStorage.setItem('token', token);
+      setToken(token);
       setUser(userData);
       setIsAuthenticated(true);
       
@@ -163,6 +175,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register,
     logout,
     updateProfile,
+    setUser,
+    setToken,
+    setIsAuthenticated,
   };
 
   return (

@@ -16,7 +16,7 @@ const Equipment = lazy(() => import("./pages/equipment"));
 const EquipmentDetail = lazy(() => import("./pages/equipment/DetailPage"));
 const Tutorials = lazy(() => import("./pages/tutorials"));
 const TutorialDetail = lazy(() => import("./pages/tutorials/DetailPage"));
-const Bookings = lazy(() => import("./pages/bookings"));
+const Bookings = lazy(() => import("./pages/bookings/Index"));
 const BookingCheckout = lazy(() => import("./pages/bookings/CheckoutPage"));
 const Profile = lazy(() => import("./pages/profile"));
 const PaymentSettings = lazy(() => import("./pages/profile/PaymentSettings"));
