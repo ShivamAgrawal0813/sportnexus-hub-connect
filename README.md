@@ -156,6 +156,13 @@ sportnexus-hub-connect/
 3. Set up a webhook in your Stripe dashboard pointing to `http://your-domain.com/api/payments/webhook`
 4. Add the webhook signing secret to your backend `.env` file
 
+
+## For Payment Card Details
+Card Number : 4242 4242 4242 4242
+MM/YY : 04 / 27
+CVC : 123
+ZIP : 10001
+
 ### Admin Account Setup
 
 To create an admin account:
