@@ -6,6 +6,9 @@ import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
 import { TestimonialSection } from "@/components/landing/TestimonialSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Link } from "react-router-dom";
+import { Switch } from "@/components/ui/switch";
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
 
 // Demo data
 const heroItems = [
@@ -108,6 +111,9 @@ const testimonials = [
 ];
 
 export default function LandingPage() {
+  const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, logout } = useAuth();
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
@@ -135,12 +141,23 @@ export default function LandingPage() {
           </Link>
         </nav>
         <div className="flex items-center gap-4">
-          <Button asChild variant="outline" size="default" className="font-medium">
-            <Link to="/login">Login</Link>
-          </Button>
-          <Button asChild size="default" className="font-medium">
-            <Link to="/register">Sign Up</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Dark Mode</span>
+            <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+          </div>
+          {isAuthenticated && (
+            <Button variant="outline" onClick={logout} className="font-medium">Sign Out</Button>
+          )}
+          {!isAuthenticated && (
+            <>
+              <Button asChild variant="outline" size="default" className="font-medium">
+                <Link to="/login">Login</Link>
+              </Button>
+              <Button asChild size="default" className="font-medium">
+                <Link to="/register">Sign Up</Link>
+              </Button>
+            </>
+          )}
         </div>
       </header>
 

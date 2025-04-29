@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound";
 import { lazy, Suspense } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { ThemeProvider } from "./context/ThemeContext";
 
 // Lazy load pages for code splitting
 const Venues = lazy(() => import("./pages/venues"));
@@ -166,16 +167,18 @@ const AppRoutes = () => (
 );
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <BrowserRouter>
-        <TooltipProvider>
-          <AppRoutes />
-          <Toaster position="bottom-right" />
-        </TooltipProvider>
-      </BrowserRouter>
-    </AuthProvider>
-  </QueryClientProvider>
+  <ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <TooltipProvider>
+            <AppRoutes />
+            <Toaster position="bottom-right" />
+          </TooltipProvider>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

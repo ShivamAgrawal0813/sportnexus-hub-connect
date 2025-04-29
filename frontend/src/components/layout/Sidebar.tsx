@@ -7,6 +7,8 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Home, Menu, Calendar, Box, Video, User, LogOut, Shield, BookmarkCheck, Wallet, Tag } from "lucide-react";
 import { NavItem } from "@/types";
 import { useAuth } from "@/context/AuthContext";
+import { Switch } from "@/components/ui/switch";
+import { useTheme } from "@/context/ThemeContext";
 
 interface SidebarProps {
   className?: string;
@@ -116,6 +118,7 @@ interface MobileNavProps {
 
 function MobileNav({ items, setOpen, onLogout, userName }: MobileNavProps) {
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
   
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-primary/10 to-background">
@@ -154,6 +157,10 @@ function MobileNav({ items, setOpen, onLogout, userName }: MobileNavProps) {
       
       {/* User information and logout */}
       <div className="border-t bg-background/40 backdrop-blur-sm p-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-base font-medium">Dark Mode</span>
+          <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+        </div>
         {userName && (
           <div className="mb-3 text-base font-medium">
             <span className="text-muted-foreground">Signed in as:</span>
@@ -183,6 +190,7 @@ interface DesktopNavProps {
 
 function DesktopNav({ items, onLogout, userName }: DesktopNavProps) {
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
   
   return (
     <div className="flex h-screen flex-col bg-gradient-to-b from-primary/10 to-background border-r overflow-hidden">
@@ -216,6 +224,10 @@ function DesktopNav({ items, onLogout, userName }: DesktopNavProps) {
       
       {/* User information and logout */}
       <div className="border-t bg-background/40 backdrop-blur-sm p-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-base font-medium">Dark Mode</span>
+          <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+        </div>
         {userName && (
           <div className="mb-3 text-base font-medium">
             <span className="text-muted-foreground">Signed in as:</span>
